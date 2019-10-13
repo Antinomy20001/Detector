@@ -31,7 +31,7 @@ std::string recognize(const MHandle &handle, cv::Mat &img, MRESULT &res)
     ASF_MultiFaceInfo detectedFaces;
     ASF_SingleFaceInfo SingleDetectedFaces;
 
-    if (img.cols % 4 != 0)//4-bytes alignment
+    if (img.cols % 4 != 0) //4-bytes alignment
     {
         cv::Mat align = cv::Mat::zeros(img.rows, (4 - img.cols % 4), img.type());
         img = img.t();
@@ -41,8 +41,9 @@ std::string recognize(const MHandle &handle, cv::Mat &img, MRESULT &res)
     }
 
     res = ASFDetectFaces(handle, img.cols, img.rows, ASVL_PAF_RGB24_B8G8R8, (MUInt8 *)img.ptr<uchar>(0), &detectedFaces);
-    if(res != MOK){
-        return  std::string("failed");
+    if (res != MOK)
+    {
+        return std::string("failed");
     }
     SingleDetectedFaces.faceRect.left = detectedFaces.faceRect[0].left;
     SingleDetectedFaces.faceRect.top = detectedFaces.faceRect[0].top;
@@ -70,7 +71,7 @@ public:
 
     void init(MInt32 mask, size_t thr = 5)
     {
-        auto opts = Http::Endpoint::options().threads(thr).maxPayload(1e9);
+        auto opts = Http::Endpoint::options().threads(thr).maxRequestSize(1e9);
         std::vector<MRESULT> results;
         for (int i = 0; i < thr; i += 1)
         {
@@ -79,7 +80,8 @@ public:
             results.push_back(res);
             queue.push(handle);
         }
-        if (std::any_of(results.begin(), results.end(), [&](MRESULT& res) { return res != MOK; })){
+        if (std::any_of(results.begin(), results.end(), [&](MRESULT &res) { return res != MOK; }))
+        {
             std::cout << "engines init failed" << std::endl;
         }
         httpEndpoint->init(opts);
@@ -102,7 +104,7 @@ private:
     }
     void doPing(const Rest::Request &request, Http::ResponseWriter response)
     {
-        std::string result = "{\"data\":\"ok\"}";
+        std::string result = "{\"code\":\"200\"}";
         response.send(Http::Code::Ok, result);
     }
 
@@ -110,7 +112,7 @@ private:
     {
         auto image_data = request.body();
         auto image_data_vector = std::vector<char>(image_data.begin(), image_data.end());
-        auto image = cv::imdecode(image_data_vector, cv::IMREAD_ANYCOLOR | cv::IMREAD_ANYDEPTH);
+        auto image = cv::imdecode(image_data_vector, cv::IMREAD_ANYCOLOR);
 
         MHandle handle = nullptr;
         MRESULT res = -1;
@@ -119,12 +121,12 @@ private:
         auto box = recognize(handle, image, res);
         if (res != MOK)
         {
-            std::string result = "{\"data\":\"wdnmd\"}";
+            std::string result = "{\"data\":\"406\"}";
             response.send(Http::Code::Not_Acceptable, result);
         }
 
         queue.push(handle);
-        std::string result = "{\"data\":\"ok\",\"box\":" + box + "}";
+        std::string result = "{\"code\":\"200\",\"box\":" + box + "}";
         response.send(Http::Code::Ok, result);
     }
 
@@ -140,6 +142,10 @@ int main(int argc, char *argv[])
     {
         std::cout << res << " wdnmd" << std::endl;
         return 0;
+    }
+    else
+    {
+        std::cout << "activation successful" << std::endl;
     }
     MInt32 mask = ASF_FACE_DETECT;
 
@@ -158,9 +164,12 @@ int main(int argc, char *argv[])
 
     StatsEndpoint stats(addr);
     stats.init(mask, thr);
-    try{
+    try
+    {
         stats.start();
-    }catch(std::exception e){
+    }
+    catch (std::exception e)
+    {
         std::cout << e.what() << std::endl;
         return 0;
     }

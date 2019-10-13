@@ -4,6 +4,7 @@ build*/
 tmp*
 samplecode.cpp
 test_opencv.cpp
+linux_so/
 
 # Prerequisites
 *.d
