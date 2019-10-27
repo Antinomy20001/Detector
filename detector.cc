@@ -3,6 +3,9 @@
 #include <pistache/endpoint.h>
 #include <iostream>
 
+#include <rapidjson/document.h>
+#include <rapidjson/prettywriter.h>
+
 #include <opencv2/opencv.hpp>
 #include <opencv2/core.hpp>
 #include <opencv2/core/mat.hpp>
@@ -20,17 +23,16 @@
 #pragma comment(lib, "libarcsoft_face_engine.lib")
 #pragma comment(lib, "libpistache.lib")
 
-#define APPID "txwUMMgDJr1SZurx1HV1PvdMAdhDEXBmTt1E79QtRtE"
-#define SDKKey "9H1e5nrF8SY52npAEnuaLGTdnaUasVdVYUvKkqRWR4Nk"
+#define psw1 "txwUMMgDJr1SZurx1HV1PvdMAdhDEXBmTt1E79QtRtE"
+#define psw2 "9H1e5nrF8SY52npAEnuaLGTdnaUasVdVYUvKkqRWR4Nk"
 
+#define str std::to_string
 using namespace Pistache;
 using cv::String;
 
-std::string recognize(const MHandle &handle, cv::Mat &img, MRESULT &res)
+void recognize(rapidjson::Document &doc, const MHandle &handle, cv::Mat &img, MRESULT &res)
 {
     ASF_MultiFaceInfo detectedFaces;
-    ASF_SingleFaceInfo SingleDetectedFaces;
-
     if (img.cols % 4 != 0) //4-bytes alignment
     {
         cv::Mat align = cv::Mat::zeros(img.rows, (4 - img.cols % 4), img.type());
@@ -43,22 +45,24 @@ std::string recognize(const MHandle &handle, cv::Mat &img, MRESULT &res)
     res = ASFDetectFaces(handle, img.cols, img.rows, ASVL_PAF_RGB24_B8G8R8, (MUInt8 *)img.ptr<uchar>(0), &detectedFaces);
     if (res != MOK)
     {
-        return std::string("failed");
+        return;
     }
-    SingleDetectedFaces.faceRect.left = detectedFaces.faceRect[0].left;
-    SingleDetectedFaces.faceRect.top = detectedFaces.faceRect[0].top;
-    SingleDetectedFaces.faceRect.right = detectedFaces.faceRect[0].right;
-    SingleDetectedFaces.faceRect.bottom = detectedFaces.faceRect[0].bottom;
-    SingleDetectedFaces.faceOrient = detectedFaces.faceOrient[0];
-    int a = SingleDetectedFaces.faceRect.left;
-    int b = SingleDetectedFaces.faceRect.right;
-    int c = SingleDetectedFaces.faceRect.top;
-    int d = SingleDetectedFaces.faceRect.bottom;
-    std::stringstream ss;
-    ss << "[" << a << "," << c << "," << b << "," << d << "]";
-    std::string result;
-    ss >> result;
-    return result;
+    auto &allocator = doc.GetAllocator();
+    doc.AddMember("count", detectedFaces.faceNum, allocator);
+    doc.AddMember("boxes", rapidjson::Value(rapidjson::kArrayType), allocator);
+    
+    for(int i = 0,a,b,c,d;i < detectedFaces.faceNum; i+=1){
+        rapidjson::Value array(rapidjson::kArrayType);
+        a = detectedFaces.faceRect[i].left;
+        b = detectedFaces.faceRect[i].top;
+        c = detectedFaces.faceRect[i].right;
+        d = detectedFaces.faceRect[i].bottom;
+        array.PushBack(a, allocator);
+        array.PushBack(b, allocator);
+        array.PushBack(c, allocator);
+        array.PushBack(d, allocator);
+        doc["boxes"].PushBack(array, allocator);
+    }
 }
 
 class StatsEndpoint
@@ -76,7 +80,7 @@ public:
         for (int i = 0; i < thr; i += 1)
         {
             MHandle handle = nullptr;
-            auto res = ASFInitEngine(ASF_DETECT_MODE_IMAGE, ASF_OP_0_ONLY, 30, 1, mask, &handle);
+            auto res = ASFInitEngine(ASF_DETECT_MODE_IMAGE, ASF_OP_0_ONLY, 30, 50, mask, &handle);
             results.push_back(res);
             queue.push(handle);
         }
@@ -104,30 +108,43 @@ private:
     }
     void doPing(const Rest::Request &request, Http::ResponseWriter response)
     {
-        std::string result = "{\"code\":\"200\"}";
-        response.send(Http::Code::Ok, result);
+        rapidjson::Document doc;
+        doc.SetObject();
+        rapidjson::StringBuffer result;
+        rapidjson::Writer<rapidjson::StringBuffer> writer(result);
+        doc.AddMember("code", static_cast<int>(Http::Code::Ok), doc.GetAllocator());
+        
+        doc.Accept(writer);
+        response.send(Http::Code::Ok, std::string(result.GetString()));
     }
 
     void doDetect(const Rest::Request &request, Http::ResponseWriter response)
     {
         auto image_data = request.body();
+        
         auto image_data_vector = std::vector<char>(image_data.begin(), image_data.end());
         auto image = cv::imdecode(image_data_vector, cv::IMREAD_ANYCOLOR);
+        rapidjson::Document doc;
+        doc.SetObject();
+        rapidjson::StringBuffer result;
+        rapidjson::Writer<rapidjson::StringBuffer> writer(result);
 
         MHandle handle = nullptr;
         MRESULT res = -1;
         queue.wait_and_pop(handle);
-
-        auto box = recognize(handle, image, res);
+        recognize(doc, handle, image, res);
         if (res != MOK)
         {
-            std::string result = "{\"data\":\"406\"}";
-            response.send(Http::Code::Not_Acceptable, result);
-        }
+            doc.AddMember("code", static_cast<int>(Http::Code::Not_Acceptable), doc.GetAllocator());
 
+            doc.Accept(writer);
+            response.send(Http::Code::Not_Acceptable, std::string(result.GetString()));
+        }
+        doc.AddMember("code", static_cast<int>(Http::Code::Ok), doc.GetAllocator());
         queue.push(handle);
-        std::string result = "{\"code\":\"200\",\"box\":" + box + "}";
-        response.send(Http::Code::Ok, result);
+
+        doc.Accept(writer);
+        response.send(Http::Code::Ok, std::string(result.GetString()));
     }
 
     shared_queue<MHandle> queue;
@@ -137,7 +154,7 @@ private:
 
 int main(int argc, char *argv[])
 {
-    auto res = ASFActivation(APPID, SDKKey);
+    auto res = ASFActivation(psw1, psw2);
     if (res != MOK && res != MERR_ASF_ALREADY_ACTIVATED)
     {
         std::cout << res << " wdnmd" << std::endl;
@@ -149,7 +166,7 @@ int main(int argc, char *argv[])
     }
     MInt32 mask = ASF_FACE_DETECT;
 
-    Port port(11451);
+    Port port(11459);
     int thr = 5;
     if (argc >= 2)
     {
@@ -164,14 +181,7 @@ int main(int argc, char *argv[])
 
     StatsEndpoint stats(addr);
     stats.init(mask, thr);
-    try
-    {
-        stats.start();
-    }
-    catch (std::exception e)
-    {
-        std::cout << e.what() << std::endl;
-        return 0;
-    }
+
+    stats.start();
     return 0;
 }
