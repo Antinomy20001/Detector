@@ -15,14 +15,16 @@
 | 参数名 | 类型 | 参数说明 |
 | :----: | :--: | :------: |
 | code | `Int` | http状态码 |
-| box | `Int Array` | 四个数字的array,'''[a,b,c,d]'''表示[left, upper, right, lower]|
+| count | `Int` | 人脸个数 |
+| box | `Array of Int Array` | 四个数字的array的array,'''[a,b,c,d]'''表示[left, upper, right, lower]|
 
 ### 成功请求返回值示例
 
 ```json
 {
 	"code": 200,
-  	"box": [1,2,3,4]
+	"count": 2,
+  	"boxes": [[1,2,3,4],[5,6,7,8]]
 }
 ```
 
