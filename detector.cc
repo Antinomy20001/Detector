@@ -50,17 +50,22 @@ void recognize(rapidjson::Document &doc, const MHandle &handle, cv::Mat &img, MR
     auto &allocator = doc.GetAllocator();
     doc.AddMember("count", detectedFaces.faceNum, allocator);
     doc.AddMember("boxes", rapidjson::Value(rapidjson::kArrayType), allocator);
-    
-    for(int i = 0,a,b,c,d;i < detectedFaces.faceNum; i+=1){
+
+    for (int i = 0, x1, y1, x2, y2; i < detectedFaces.faceNum; i += 1)
+    {
         rapidjson::Value array(rapidjson::kArrayType);
-        a = detectedFaces.faceRect[i].left;
-        b = detectedFaces.faceRect[i].top;
-        c = detectedFaces.faceRect[i].right;
-        d = detectedFaces.faceRect[i].bottom;
-        array.PushBack(a, allocator);
-        array.PushBack(b, allocator);
-        array.PushBack(c, allocator);
-        array.PushBack(d, allocator);
+        x1 = detectedFaces.faceRect[i].left;
+        y1 = detectedFaces.faceRect[i].top;
+        x2 = detectedFaces.faceRect[i].right;
+        y2 = detectedFaces.faceRect[i].bottom;
+        x1 = std::max(0, x1);
+        y1 = std::max(0, y1);
+        x2 = std::min(img.cols, x2);
+        y2 = std::min(img.rows, y2);
+        array.PushBack(x1, allocator);
+        array.PushBack(y1, allocator);
+        array.PushBack(x2, allocator);
+        array.PushBack(y2, allocator);
         doc["boxes"].PushBack(array, allocator);
     }
 }
@@ -113,7 +118,7 @@ private:
         rapidjson::StringBuffer result;
         rapidjson::Writer<rapidjson::StringBuffer> writer(result);
         doc.AddMember("code", static_cast<int>(Http::Code::Ok), doc.GetAllocator());
-        
+
         doc.Accept(writer);
         response.send(Http::Code::Ok, std::string(result.GetString()));
     }
@@ -121,7 +126,7 @@ private:
     void doDetect(const Rest::Request &request, Http::ResponseWriter response)
     {
         auto image_data = request.body();
-        
+
         auto image_data_vector = std::vector<char>(image_data.begin(), image_data.end());
         auto image = cv::imdecode(image_data_vector, cv::IMREAD_ANYCOLOR);
         rapidjson::Document doc;
